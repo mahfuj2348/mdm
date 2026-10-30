@@ -3,7 +3,7 @@
   const seen = new WeakSet();
   const records = new Set();
   let pending = false;
-  let stopped = false, scanFrame, mutationObserver, scrollTimer, scrolling=false;
+  let stopped = false, scanFrame, mutationObserver, scrollTimer;
   const listeners = new AbortController();
   const resizeObserver = new ResizeObserver(() => position());
   const direct = value => { try { const u = new URL(value, location.href); return /^https?:$/.test(u.protocol) ? u.href : null; } catch { return null; } };
@@ -14,7 +14,7 @@
     clearTimeout(scrollTimer);
     mutationObserver?.disconnect();resizeObserver.disconnect();
     if(scanFrame!==undefined)cancelAnimationFrame(scanFrame);
-    for(const record of records){record.sourceObserver?.disconnect();record.host.remove();}
+    for(const record of records){clearTimeout(record.retireTimer);record.sourceObserver?.disconnect();record.host.remove();}
     records.clear();
     try{api.runtime.onMessage.removeListener(onMessage);}catch{}
   }
@@ -43,6 +43,13 @@
       const button = shadow.querySelector('.download');
       const dismiss = shadow.querySelector('.dismiss');
       const record = {video, host, shadow, dismissed:false}; records.add(record);
+      const leave = () => {
+        record.lastSeen=Date.now(); clearTimeout(record.retireTimer);
+        record.retireTimer=setTimeout(position,850);
+      };
+      video.addEventListener('pointerleave',leave,{signal:listeners.signal});
+      host.addEventListener('pointerleave',leave,{signal:listeners.signal});
+      host.addEventListener('focusout',leave,{signal:listeners.signal});
       resizeObserver.observe(video);
       document.documentElement.appendChild(host);
       const report = () => {
@@ -120,12 +127,22 @@
   function position() {
     if(!connected())return;
     for (const record of records) {
-      if (!record.video.isConnected) { resizeObserver.unobserve(record.video); record.sourceObserver.disconnect(); record.host.remove(); records.delete(record); continue; }
+      const interacting = record.host.matches(':hover') || record.host.matches(':focus-within') || !!record.shadow.querySelector('.chooser');
+      const grace = Date.now() - (record.lastSeen || 0) < 800;
+      if (!record.video.isConnected && !interacting && !grace) {
+        clearTimeout(record.retireTimer); resizeObserver.unobserve(record.video);
+        record.sourceObserver.disconnect(); record.host.remove(); records.delete(record);
+        seen.delete(record.video); continue;
+      }
       const fullscreen=document.fullscreenElement;
       const parent=fullscreen && fullscreen !== record.video && fullscreen.contains(record.video) ? fullscreen : document.documentElement;
       if(record.host.parentNode !== parent) parent.appendChild(record.host);
-      const rect = record.video.getBoundingClientRect();
-      const visible = !scrolling && !record.dismissed && rect.width > 100 && rect.height > 60 && rect.top >= 0 && rect.top < innerHeight-30 && rect.right > 0 && rect.left < innerWidth;
+      const rect = record.video.isConnected ? record.video.getBoundingClientRect() : record.lastRect;
+      if (!rect) continue;
+      record.lastRect = rect;
+      const onScreen = record.video.isConnected && rect.width > 100 && rect.height > 60 && rect.bottom > 0 && rect.top < innerHeight && rect.right > 0 && rect.left < innerWidth;
+      if (onScreen) record.lastSeen = Date.now();
+      const visible = !record.dismissed && (onScreen || interacting || grace);
       record.host.style.display = visible ? 'block' : 'none';
       if(!visible)continue;
       const width = record.host.offsetWidth || 180, height = record.host.offsetHeight || 27;
@@ -153,8 +170,11 @@
   function onScroll(event) {
     // Scrolling the quality list itself must remain usable.
     if(event?.composedPath?.().some(node=>[...records].some(record=>node===record.host)))return;
-    scrolling=true;closeChoosers();clearTimeout(scrollTimer);
-    scrollTimer=setTimeout(()=>{scrolling=false;position();},140);
+    // Reposition instead of hiding: hiding here made the button vanish whenever a
+    // page fired scroll events while the pointer travelled towards it.
+    clearTimeout(scrollTimer);
+    scrollTimer=setTimeout(position,850);
+    position();
   }
   addEventListener('scroll', onScroll, {capture:true,signal:listeners.signal}); addEventListener('resize', position, {signal:listeners.signal}); document.addEventListener('fullscreenchange',position,{signal:listeners.signal});
   function onMessage(message, sender, respond) {

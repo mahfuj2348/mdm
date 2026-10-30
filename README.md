@@ -1,7 +1,7 @@
 # MDM
 
-A macOS download manager with a compact desktop interface and browser video
-capture. Native Apple Silicon build with segmented, resumable transfers.
+A download manager for Windows and macOS with browser video capture,
+parallel transfers and a compact desktop interface.
 
 **Based on:** the open-source [Awesome Downloader for macOS](https://github.com/abuzargifari/awesome-downloader-mac)
 preview, which was itself ported from
@@ -28,10 +28,16 @@ unsupported.
 
 ## Installation
 
-1. Download **MDM-0.1.1-macOS-arm64.dmg** from the
-   [releases page](https://github.com/mahfuj2348/mdm/releases) (Apple Silicon).
-2. Open the DMG and drag **MDM** into your **Applications** folder.
-3. Launch MDM from Applications or Spotlight.
+Open **[Download latest release](https://github.com/mahfuj2348/mdm/releases/latest)**.
+
+| Computer | Download | Install |
+| --- | --- | --- |
+| Windows 10/11 (64-bit) | **Windows-x64-Setup.exe** | Run the setup wizard |
+| Mac with Apple Silicon (M-series) | **macOS-arm64.dmg** | Drag MDM to Applications |
+| Mac with Intel processor | **macOS-x64.dmg** | Drag MDM to Applications |
+
+The installer includes the download engine, FFmpeg, yt-dlp and the browser
+extension. No Node.js, Python or terminal is needed. Full steps: [Installation](docs/INSTALL.md).
 
 The build is ad-hoc signed, not notarised. If macOS warns on first launch, open
 **System Settings → Privacy & Security** and choose **Open Anyway**.
@@ -48,7 +54,7 @@ The extension adds one-click video detection and download:
 3. Click **Open Chrome extensions** (or your browser's extensions page).
 4. Turn on **Developer mode**.
 5. Click **Load unpacked**, press **Cmd+Shift+G**, paste the copied path, and
-   select the folder.
+   select the folder. On Windows, paste the path into the file picker address bar.
 6. MDM connects to the extension automatically. Refresh any video page to see the
    download button.
 
@@ -57,7 +63,7 @@ Building a submission package and the store steps are in
 
 ## Privacy
 
-MDM runs entirely on your Mac and has no telemetry, analytics or crash reporting:
+MDM runs entirely on your computer and has no telemetry, analytics or crash reporting:
 
 - The desktop↔browser bridge listens on `127.0.0.1` only, requires a random
   per-session bearer token, rejects cross-origin requests and accepts only JSON
@@ -80,7 +86,9 @@ npm start       # run the desktop app from source
 npm run dist    # build the DMG into ./release
 ```
 
-Building requires Node.js 22+ and macOS.
+Building requires Node.js 22+. Run `npm run vendor` before packaging.
+Use `npm run dist:mac` on macOS or `npm run dist:win` on Windows.
+Tagged releases build and test Windows x64, macOS arm64 and macOS x64 in GitHub Actions.
 
 ## License
 

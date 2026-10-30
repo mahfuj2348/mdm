@@ -1,7 +1,7 @@
 {
   "name": "mdm",
-  "version": "0.1.1",
-  "description": "A macOS download manager with segmented transfers and browser video capture",
+  "version": "0.1.2",
+  "description": "A download manager for Windows and macOS with parallel transfers and browser video capture",
   "main": "desktop/main.cjs",
   "private": true,
   "repository": {
@@ -18,7 +18,10 @@
     "test": "node --test tests/*.test.mjs integration/*.test.cjs extension/*.test.cjs",
     "package": "electron-builder --mac dir",
     "dist": "electron-builder --mac dmg --publish never",
-    "dist:zip": "electron-builder --mac zip --publish never"
+    "dist:zip": "electron-builder --mac zip --publish never",
+    "dist:mac": "electron-builder --mac dmg zip --publish never",
+    "dist:win": "electron-builder --win nsis --x64 --publish never",
+    "vendor": "node scripts/fetch-vendor.mjs"
   },
   "devDependencies": {
     "electron": "44.9.1",
@@ -57,7 +60,8 @@
         "to": "tools",
         "filter": [
           "*.txt",
-          "yt-dlp_macos"
+          "yt-dlp_macos",
+          "yt-dlp.exe"
         ]
       },
       {
@@ -75,12 +79,15 @@
           "native-host.sh",
           "native-host.cjs",
           "README.md",
-          "register-native-host.sh"
+          "register-native-host.sh",
+          "native-host.exe",
+          "NativeHostLauncher.cs",
+          "register-native-host.ps1"
         ]
       }
     ],
     "asarUnpack": [
-      "node_modules/ffmpeg-static/ffmpeg"
+      "node_modules/ffmpeg-static/ffmpeg*"
     ],
     "mac": {
       "target": [
@@ -118,6 +125,27 @@
           "path": "/Applications"
         }
       ]
+    },
+    "artifactName": "MDM-${version}-${os}-${arch}.${ext}",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "MDM-${version}-Windows-${arch}-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true
     }
   },
   "dependencies": {

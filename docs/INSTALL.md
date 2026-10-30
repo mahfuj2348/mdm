@@ -2,12 +2,14 @@
 
 ## Download
 
-macOS on Apple Silicon (M1–M4) is the supported target. This is preview
-software; YouTube speed and compatibility vary.
+Open **[Latest release](https://github.com/mahfuj2348/mdm/releases/latest)**:
 
-Open the [releases page](https://github.com/mahfuj2348/mdm/releases) and download
-**MDM-0.1.1-macOS-arm64.dmg**. You do not need Git, Node.js or a terminal to
-install the application.
+- **Windows 10/11 x64:** download `MDM-0.1.2-Windows-x64-Setup.exe`, run it and follow the wizard. Open MDM from Start or the desktop shortcut.
+- **Apple Silicon Mac:** download `MDM-0.1.2-macOS-arm64.dmg`.
+- **Intel Mac:** download `MDM-0.1.2-macOS-x64.dmg`.
+
+No Git, Node.js, Python or terminal is needed. The Windows installer is unsigned,
+so an unknown-publisher prompt may appear. Video speed depends on the source server.
 
 The build is ad-hoc signed, not notarised, so macOS may refuse the first launch.
 Do not disable Gatekeeper system-wide. Instead open **System Settings → Privacy &
@@ -32,8 +34,8 @@ Add it once per browser:
    `edge://extensions`, `brave://extensions` or `opera://extensions` in that
    browser's address bar.
 4. Switch on **Developer mode**.
-5. Click **Load unpacked**. A macOS file picker opens.
-6. Press **Cmd+Shift+G**, paste the path copied in step 2, and press **Enter**.
+5. Click **Load unpacked**. A file picker opens.
+6. On macOS, press **Cmd+Shift+G** and paste the copied path. On Windows, paste it into the file picker address bar. Press **Enter**.
 7. Select the **extension** folder itself — not a file inside it and not its
    `icons` subfolder — then click **Select**.
 8. The Extensions page should now list **MDM Integration** with its switch on.
@@ -89,6 +91,7 @@ supported.
 Quit MDM before installing a newer release. After updating, reload the extension on
 the browser's extensions page and refresh your video tabs.
 
-To uninstall, drag **MDM** from Applications to the Trash. Remove the browser
+On Windows, uninstall MDM from **Settings → Apps**.
+On macOS, drag **MDM** from Applications to the Trash. Remove the browser
 extension separately. Downloads and the `~/.mdm` folder are not deleted
 automatically. There is no automatic updater yet.

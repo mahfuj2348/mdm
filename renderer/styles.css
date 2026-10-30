@@ -11,3 +11,7 @@
 .progress-window.review-window #add-dialog{position:static;margin:0;width:100%;max-width:none;max-height:none;min-height:100vh;border:0;box-shadow:none;border-radius:0}
 .progress-window.review-window #add-dialog::backdrop{background:#f0f0f0}
 .progress-window.review-window #add-dialog>.dialog-title{display:none}
+
+/* Keep measured progress fluid between engine snapshots. */
+progress::-webkit-progress-value { transition: width 180ms linear; }
+@media (prefers-reduced-motion: reduce) { progress::-webkit-progress-value { transition: none; } }

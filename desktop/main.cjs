@@ -145,7 +145,7 @@ if (process.argv.includes('--native-host')) {
       // macOS application menu
       Menu.setApplicationMenu(Menu.buildFromTemplate([
         { role: 'appMenu', submenu: [
-          { label: 'About MDM', click: () => dialog.showMessageBox(window, { title: 'About MDM', message: 'MDM 0.1.1-mac', detail: 'macOS download manager with browser integration. Ported from the original Windows implementation.' }) },
+          { label: 'About MDM', click: () => dialog.showMessageBox(window, { title: 'About MDM', message: 'MDM ' + app.getVersion(), detail: 'Download manager for Windows and macOS with browser integration.' }) },
           { type: 'separator' },
           { role: 'hide' },
           { role: 'hideOthers' },

@@ -6,7 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { validUrl, cleanHeaders, request, probe, transientStatus, retryAfter } from './http.mjs';
 import { resolveHls, scopedHeaders } from './hls.mjs';
 import { youtubeUrl, downloadYoutube } from './youtube.mjs';
-import {streamProgress} from './stream-progress.mjs';
+import {streamProgress, transferRate} from './stream-progress.mjs';
 import {downloadSabr,normalizeSabrSession} from './sabr.mjs';
 
 const TRANSIENT = new Set(['downloading', 'probing', 'assembling']);
@@ -43,7 +43,7 @@ const categoryFor = name => Object.entries(CATEGORY).find(([, re]) => re.test(na
 const failure = (message, retryable = false, retryDelay = null) => Object.assign(new Error(message), { retryable, retryDelay });
 
 export class DownloadEngine extends EventEmitter {
-  constructor({ dataDirectory, downloadDirectory, tickMs = 500 }) {
+  constructor({ dataDirectory, downloadDirectory, tickMs = 200 }) {
     super();
     this.dataDirectory = dataDirectory;
     this.statePath = path.join(dataDirectory, 'downloads.json');
@@ -203,6 +203,10 @@ export class DownloadEngine extends EventEmitter {
       }
     }
   }
+  watchProgress(d, bytes = () => d.downloaded) {
+    const rate = transferRate(bytes());
+    return setInterval(() => { d.speed = rate(bytes()); this.changed(); }, this.tickMs);
+  }
   async throttle(bytes, signal) {
     if (!this.settings.speedLimitKbps) return;
     const wait = Math.max(0, this.rateNext - Date.now());
@@ -256,11 +260,7 @@ export class DownloadEngine extends EventEmitter {
     }
     d.downloaded = d.segments.reduce((n, s) => n + s.downloaded, 0);
     d.connections = d.segments.length; d.status = 'downloading'; await this.persist(); this.changed();
-    let lastBytes = d.downloaded, lastAt = Date.now();
-    const progress = setInterval(() => {
-      const now = Date.now(); d.speed = (d.downloaded - lastBytes) * 1000 / (now - lastAt);
-      lastBytes = d.downloaded; lastAt = now; this.changed();
-    }, this.tickMs);
+    const progress = this.watchProgress(d);
     const siblings = new AbortController();
     const transferSignal = AbortSignal.any([signal, siblings.signal]);
     try {
@@ -328,8 +328,8 @@ export class DownloadEngine extends EventEmitter {
     }));
     d.connections = Math.min(this.settings.connections, d.segments.length);
     d.status = 'downloading'; await this.persist(); this.changed();
-    let index = 0, lastBytes = d.downloaded, lastTime = Date.now();
-    const progress = setInterval(() => { const now = Date.now(); d.speed = (d.downloaded - lastBytes) * 1000 / Math.max(1, now - lastTime); lastBytes = d.downloaded; lastTime = now; this.changed(); }, this.tickMs);
+    let index = 0;
+    const progress = this.watchProgress(d);
     const siblings = new AbortController(), groupSignal = AbortSignal.any([signal, siblings.signal]);
     const worker = async () => {
       while (index < d.segments.length) {
@@ -378,16 +378,33 @@ export class DownloadEngine extends EventEmitter {
     const dir=path.join(this.partsDirectory,d.id);await fs.mkdir(dir,{recursive:true});
     // Direct adaptive tracks are separate files; concatenating them corrupts MP4.
     d.kind='paired';d.resumable=false;d.downloaded=0;d.total=infos.every(i=>i.total!==null)?infos.reduce((n,i)=>n+i.total,0):null;
-    d.segments=infos.map(i=>({start:0,end:i.total===null?null:i.total-1,downloaded:0}));
-    d.status='downloading';d.connections=2;this.changed();
-    let last=0,at=Date.now();const timer=setInterval(()=>{const now=Date.now();d.speed=(d.downloaded-last)*1000/Math.max(1,now-at);last=d.downloaded;at=now;this.changed();},this.tickMs);
+    // Split each ranged track so a single throttled connection does not hold up
+    // the entire video. Keep all video parts before audio parts for exact muxing.
+    const perTrack = Math.max(1, Math.floor(this.settings.connections / 2));
+    const plans = infos.map((info, track) => {
+      const count = info.ranges && info.total > 1024 * 1024
+        ? Math.min(perTrack, Math.ceil(info.total / (512 * 1024))) : 1;
+      return Array.from({length: count}, (_, i) => ({track,
+        start: info.total === null ? 0 : Math.floor(info.total * i / count),
+        end: info.total === null ? null : Math.floor(info.total * (i + 1) / count) - 1,
+        downloaded: 0}));
+    });
+    d.segments=plans.flat();
+    d.status='downloading';d.connections=d.segments.length;this.changed();
+    const timer=this.watchProgress(d);
     const siblings=new AbortController(),group=AbortSignal.any([signal,siblings.signal]);
     try {
-      const outcomes=await Promise.allSettled(urls.map(async(url,i)=>{try{const file=path.join(dir,i+'.part');await fs.writeFile(file,Buffer.alloc(0));await this.transfer(d,infos[i],d.segments[i],file,trackHeaders[i],group,url);}catch(error){siblings.abort();throw error;}}));
+      const outcomes=await Promise.allSettled(d.segments.map(async(segment,i)=>{
+        try {
+          const file=path.join(dir,i+'.part');await fs.writeFile(file,Buffer.alloc(0));
+          const track=segment.track;
+          await this.transfer(d,infos[track],segment,file,trackHeaders[track],group,urls[track]);
+        } catch(error){siblings.abort();throw error;}
+      }));
       const failed=outcomes.find(o=>o.status==='rejected'&&o.reason.name!=='AbortError')||outcomes.find(o=>o.status==='rejected');if(failed)throw failed.reason;
     } finally {clearInterval(timer);}
     signal.throwIfAborted();d.status='assembling';d.speed=0;this.changed();
-    const {muxTracks}=await import('./mux.mjs');const combined=await muxTracks(dir,1,2,signal);
+    const {muxTracks}=await import('./mux.mjs');const combined=await muxTracks(dir,plans[0].length,d.segments.length,signal);
     d.total=d.downloaded=(await fs.stat(combined)).size;
     await this.assemble(d,dir,signal,[combined],true);
   }
@@ -400,7 +417,7 @@ export class DownloadEngine extends EventEmitter {
     d.total=picked.every(f=>Number(f.contentLength)>0)?picked.reduce((sum,f)=>sum+Number(f.contentLength),0):null;
     d.segments=picked.map(f=>({start:0,end:Number(f.contentLength)>0?Number(f.contentLength)-1:null,downloaded:0}));
     d.connections=picked.length;d.status='downloading';await this.persist();this.changed();
-    let networkDownloaded=0,last=0,at=Date.now();const timer=setInterval(()=>{const now=Date.now();d.speed=(networkDownloaded-last)*1000/Math.max(1,now-at);last=networkDownloaded;at=now;this.changed();},this.tickMs);
+    let networkDownloaded=0;const timer=this.watchProgress(d,()=>networkDownloaded);
     let result;
     try{
       result=await downloadSabr({session:selected,headers,videoPath:path.join(dir,'0.part'),audioPath:path.join(dir,hasVideo?'1.part':'0.part'),signal,onProgress:progress=>{

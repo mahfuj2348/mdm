@@ -12,7 +12,7 @@ function harness(file,mode){
   class Observer{constructor(fn){this.fn=fn;observers.push(this);}observe(){}unobserve(){}disconnect(){this.disconnected=true;}}
   const video={currentSrc:'https://example.test/video.mp4',src:'',querySelectorAll(){return[];},addEventListener, isConnected:true,getBoundingClientRect(){return {top:50,bottom:400,left:0,right:600,width:600,height:350};}};
   const document={title:'Video',documentElement:{appendChild(host){host.parentNode=this;}},querySelectorAll(selector){return selector==='video'?[video]:[];},addEventListener,
-    createElement(){const host={style:{},remove(){removed++;},attachShadow(){return {querySelector(selector){return selector==='.chooser'?host.chooser||null:{addEventListener(){}};}};}};hosts.push(host);return host;}};
+    createElement(){const host={style:{},matches(selector){return selector===':hover' ? !!host.hovered : !!host.focused;},addEventListener(){},getBoundingClientRect(){return {top:20,bottom:47,left:400,right:600};},remove(){removed++;},attachShadow(){return {querySelector(selector){return selector==='.chooser'?host.chooser||null:{addEventListener(){}};}};}};hosts.push(host);return host;}};
   const context={chrome:{runtime},document,location:{href:'https://www.youtube.com/watch?v=wLdZWyLOJCI',origin:'https://www.youtube.com'},window:{},URL,AbortController,ResizeObserver:Observer,MutationObserver:Observer,addEventListener,removeEventListener(name){events.delete(name);},requestAnimationFrame(){return 1;},cancelAnimationFrame(){},setTimeout,clearTimeout,dispatchEvent(){},Event,innerHeight:800,innerWidth:1200};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,file),'utf8'),context);
   return {context,events,observers,callbacks,hosts,video,get calls(){return calls;},get removed(){return removed;},invalidate(){id=undefined;}};
@@ -40,13 +40,26 @@ test('missing runtime ID retires page scripts without sending again',()=>{
   assert.equal(h.calls,1);assert.equal(h.removed,1);assert.equal(h.callbacks.size,0);
 });
 
-test('page scrolling dismisses chooser and does not pin an offscreen video button',async()=>{
+test('scrolling keeps the panel and open chooser reachable',async()=>{
   const h=harness('content.js','success'),host=h.hosts[0];
-  host.chooser={remove(){delete host.chooser;}};
+  host.chooser={style:{},remove(){delete host.chooser;}};
   h.events.get('scroll')({composedPath:()=>[]});
-  assert.equal(host.chooser,undefined);assert.equal(host.style.display,'none');
+  assert.ok(host.chooser);assert.equal(host.style.display,'block');
   h.video.getBoundingClientRect=()=>({top:-30,bottom:300,left:0,right:600,width:600,height:330});
-  await new Promise(resolve=>setTimeout(resolve,180));
+  h.events.get('resize')();assert.equal(host.style.display,'block');
+  h.invalidate();h.events.get('resize')();
+});
+test('detached hover preview retains its focused download menu',()=>{
+  const h=harness('content.js','success'),host=h.hosts[0];
+  h.video.isConnected=false;host.focused=true;
+  h.events.get('resize')();assert.equal(host.style.display,'block');assert.equal(h.removed,0);
+  h.invalidate();h.events.get('resize')();
+});
+test('offscreen panel disappears after grace period',async()=>{
+  const h=harness('content.js','success'),host=h.hosts[0];
+  h.video.getBoundingClientRect=()=>({top:-400,bottom:-50,left:0,right:600,width:600,height:350});
+  h.events.get('scroll')({composedPath:()=>[]});
+  await new Promise(resolve=>setTimeout(resolve,900));
   assert.equal(host.style.display,'none');
   h.invalidate();h.events.get('resize')();
 });

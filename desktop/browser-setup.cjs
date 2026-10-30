@@ -9,6 +9,15 @@ async function openExtensions(browser) {
     Brave: { app: 'Brave Browser', binaries: ['/Applications/Brave Browser.app/Contents/MacOS/Brave Browser'], url: 'brave://extensions/' },
     Opera: { app: 'Opera', binaries: ['/Applications/Opera.app/Contents/MacOS/Opera'], url: 'opera://extensions/' }
   };
+  if (process.platform === 'win32') {
+    const local = process.env.LOCALAPPDATA;
+    const roots = [process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)'], local].filter(Boolean);
+    const suffixes = {Chrome:'Google/Chrome/Application/chrome.exe', Edge:'Microsoft/Edge/Application/msedge.exe', Brave:'BraveSoftware/Brave-Browser/Application/brave.exe', Opera:'Programs/Opera/launcher.exe'};
+    for (const [name, definition] of Object.entries(definitions)) {
+      definition.binaries = roots.map(root => path.join(root, suffixes[name]));
+      if (name === 'Opera') definition.binaries.push(...roots.map(root => path.join(root,'Opera','launcher.exe')));
+    }
+  }
   const definition = definitions[browser];
   if (!definition) throw new Error('Choose Chrome, Edge, Brave, or Opera.');
 
@@ -21,6 +30,7 @@ async function openExtensions(browser) {
     });
     return;
   }
+  if (process.platform === 'win32') throw new Error(`${browser} was not found. Open ${definition.url} in your browser manually.`);
   // Fallback: use macOS `open` command with app name
   try {
     await new Promise((resolve, reject) => {

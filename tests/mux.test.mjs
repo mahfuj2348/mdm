@@ -10,12 +10,28 @@ import { setTimeout as delay } from 'node:timers/promises';
 import ffmpeg from 'ffmpeg-static';
 import { DownloadEngine } from '../core/engine.mjs';
 
-test('direct adaptive tracks download separately and complete as audible MP4',async t=>{
+for (const ranged of [false,true]) test(`direct adaptive tracks complete as audible MP4 (ranges: ${ranged})`,async t=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'mdm-direct-pair-'));
   const run=promisify(execFile);
   await run(ffmpeg,['-v','error','-f','lavfi','-i','color=c=blue:s=160x90:r=10','-t','1','-an','-c:v','libx264',path.join(root,'video.mp4')],{windowsHide:true});
   await run(ffmpeg,['-v','error','-f','lavfi','-i','sine=frequency=440','-t','1','-c:a','aac',path.join(root,'audio.m4a')],{windowsHide:true});
-  const server=http.createServer(async(req,res)=>{try{const bytes=await fs.readFile(path.join(root,path.basename(req.url)));res.setHeader('content-length',bytes.length);res.end(req.method==='HEAD'?undefined:bytes);}catch{res.writeHead(404);res.end();}});
+  if (ranged) {
+    // A legal MP4 free atom makes the fixture large enough for parallel ranges.
+    const padding=Buffer.alloc(2*1024*1024);padding.writeUInt32BE(padding.length);padding.write('free',4);
+    await fs.appendFile(path.join(root,'video.mp4'),padding);
+  }
+  const ranges=[];
+  const server=http.createServer(async(req,res)=>{try{
+    const bytes=await fs.readFile(path.join(root,path.basename(req.url)));
+    let start=0,end=bytes.length-1;
+    if(ranged){res.setHeader('accept-ranges','bytes');res.setHeader('etag','"fixture"');}
+    if(ranged&&req.headers.range){
+      [,start,end]=/^bytes=(\d+)-(\d+)$/.exec(req.headers.range).map(Number);
+      ranges.push([req.url,start,end]);res.statusCode=206;
+      res.setHeader('content-range',`bytes ${start}-${end}/${bytes.length}`);
+    }
+    res.setHeader('content-length',end-start+1);res.end(req.method==='HEAD'?undefined:bytes.subarray(start,end+1));
+  }catch{res.writeHead(404);res.end();}});
   await new Promise(r=>server.listen(0,'127.0.0.1',r));
   const engine=await new DownloadEngine({dataDirectory:path.join(root,'state'),downloadDirectory:path.join(root,'out'),tickMs:20}).init();
   t.after(async()=>{await engine.close();server.closeAllConnections();await new Promise(r=>server.close(r));await fs.rm(root,{recursive:true,force:true});});
@@ -23,7 +39,7 @@ test('direct adaptive tracks download separately and complete as audible MP4',as
   await engine.add({url:base+'/video.mp4',audioUrl:base+'/audio.m4a',filename:'Captured.mp4',outputFormat:'mp4'});
   const d=engine.downloads[0],end=Date.now()+15000;
   while(!['complete','error'].includes(d.status)&&Date.now()<end)await delay(25);
-  assert.equal(d.status,'complete',d.error);assert.equal(d.kind,'paired');assert.equal(d.total,(await fs.stat(d.path)).size);
+  assert.equal(d.status,'complete',d.error);assert.equal(d.kind,'paired');if(ranged){assert.ok(d.connections>2);const videoRanges=ranges.filter(r=>r[0]==='/video.mp4').sort((a,b)=>a[1]-b[1]);assert.equal(videoRanges[0][1],0);for(let i=1;i<videoRanges.length;i++)assert.equal(videoRanges[i][1],videoRanges[i-1][2]+1);}assert.equal(d.total,(await fs.stat(d.path)).size);
   await run(ffmpeg,['-v','error','-i',d.path,'-map','0:v:0','-map','0:a:0','-f','null','-'],{windowsHide:true});
 });
 
