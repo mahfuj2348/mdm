@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="MDM">
+  <defs>
+    <linearGradient id="mdm-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3fd9c6"/>
+      <stop offset="0.55" stop-color="#1f9ab8"/>
+      <stop offset="1" stop-color="#103b63"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="230" fill="url(#mdm-bg)"/>
+  <g stroke="#fff" stroke-width="98" stroke-linecap="round" fill="none">
+    <path d="M512 220V614"/>
+    <path d="M317 418 512 614 707 418"/>
+  </g>
+  <rect x="220" y="785" width="584" height="59" rx="30" fill="#fff" opacity="0.96"/>
+</svg>
