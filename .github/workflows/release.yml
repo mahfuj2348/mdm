@@ -51,6 +51,8 @@ jobs:
         run: npx electron-builder --${{ matrix.platform }} --${{ matrix.arch }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Verify installed package and bundled tools
+        run: node scripts/package-smoke.cjs
       - uses: actions/upload-artifact@v4
         with:
           name: MDM-${{ matrix.platform }}-${{ matrix.arch }}
