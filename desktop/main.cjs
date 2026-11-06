@@ -4,7 +4,7 @@ const {showProgress,closeCancelledProgress}=require('./progress-window.cjs');
 if (process.argv.includes('--native-host')) {
   require('../integration/native-host.cjs').runNativeHost();
 } else {
-  const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, Tray, Menu, nativeImage, Notification } = require('electron');
+  const { app, BrowserWindow, screen, ipcMain, dialog, shell, clipboard, Tray, Menu, nativeImage, Notification } = require('electron');
   app.setName('MDM');
   const sharedDataDirectory = path.join(app.getPath('home'), '.mdm');
   require('node:fs').mkdirSync(sharedDataDirectory, {recursive:true});
@@ -12,6 +12,7 @@ if (process.argv.includes('--native-host')) {
   const locked = app.requestSingleInstanceLock();
   let window, engine, bridge, tray, quitting = false;
   const progressWindows = new Map();
+  const browserPanels = new WeakSet();
   const progressWindowSizes = new WeakMap();
   if (!locked) app.quit();
   else {
@@ -31,7 +32,7 @@ if (process.argv.includes('--native-host')) {
         await readyForDownloads;
         const reviewOnly = payload.startNow !== true && engine.settings.confirmBrowserDownloads;
         const ids = await engine.add({ ...payload, reviewOnly, reuseActive:true });
-        await handlers.openProgress({id:ids[0]});
+        await handlers.openProgress({id:ids[0],fromBrowser:true});
         return ids;
       } }); }
       catch (error) { dialog.showErrorBox('Browser connection unavailable', error.message); }
@@ -76,17 +77,25 @@ if (process.argv.includes('--native-host')) {
       const snapshot = () => ({ ...engine.snapshot(), integration: integrationInfo() });
       const handlers = {
         snapshot,
-        openProgress: async ({id}) => {
+        openProgress: async ({id,fromBrowser=false}) => {
           const d=engine.downloads.find(d=>d.id===id); if(!d)throw new Error('Download not found.');
-          if(progressWindows.has(id)){showProgress(progressWindows.get(id));return;}
-          const progress=new BrowserWindow({width:565,height:485,minWidth:540,minHeight:440,title:d.filename,icon:appIconPath,backgroundColor:'#f0f0f0',autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
+          const usePanel = fromBrowser && process.platform === 'darwin';
+          const existing = progressWindows.get(id);
+          const workArea = () => screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+          if (existing) {
+            if (usePanel) browserPanels.add(existing);
+            showProgress(existing, browserPanels.has(existing) ? workArea() : null);
+            return;
+          }
+          const progress=new BrowserWindow({show:false,...(usePanel ? {type:'panel',minimizable:false,fullscreenable:false} : {}),width:565,height:485,minWidth:540,minHeight:440,title:d.filename,icon:appIconPath,backgroundColor:'#f0f0f0',autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
+          if (usePanel) browserPanels.add(progress);
           progress.setMenu(null);progressWindows.set(id,progress);progressWindowSizes.set(progress,{expanded:{width:565,height:485}});
           if(d.status==='complete'){progress.setMinimumSize(470,270);progress.setSize(480,280);progress.setTitle('Download complete');}
           progress.on('closed',()=>progressWindows.delete(id));
           progress.webContents.setWindowOpenHandler(()=>({action:'deny'}));
           progress.webContents.on('will-navigate',event=>event.preventDefault());
           await progress.loadFile(path.join(root,'renderer','index.html'),{query:{progress:id}});
-          showProgress(progress);
+          showProgress(progress, browserPanels.has(progress) ? workArea() : null);
         },
         add: data => engine.add(data),
         review: data => engine.reviewDownload(data),

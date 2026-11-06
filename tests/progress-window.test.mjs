@@ -13,3 +13,13 @@ test('cancel closes progress, but completion keeps its completion actions visibl
   assert.equal(windows.closeCancelledProgress(window,{status:'cancelled'}),true);
   assert.equal(closed,1);
 });
+
+test('browser panel opens on the clicked display without activating the main desktop',()=>{
+  const calls=[];
+  const window={isDestroyed:()=>false,getSize:()=>[560,480],
+    setVisibleOnAllWorkspaces:(v,options)=>calls.push([v,options]),
+    setPosition:(...args)=>calls.push(args),setAlwaysOnTop:(...args)=>calls.push(args),
+    showInactive:()=>calls.push('inactive')};
+  windows.showProgress(window,{x:-1440,y:40,width:1440,height:860});
+  assert.deepEqual(calls,[[true,{visibleOnFullScreen:true,skipTransformProcessType:true}],[-1000,230,false],[true,'floating'],'inactive']);
+});
