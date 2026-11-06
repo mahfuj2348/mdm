@@ -8,6 +8,7 @@ Download the file for your computer:
 The extension is included in the app. Open **Browser Integration**, copy its folder path, then use **Load unpacked** on your browser's extensions page. Reload the extension and refresh video tabs after upgrading.
 
 Changes:
+- Browser discovery now runs in the background so a slow or permission-gated profile cannot delay incoming download dialogs.
 - On macOS, browser downloads open a floating panel on the display where you clicked, including over a fullscreen browser, while Chrome keeps focus.
 - YouTube feed download buttons follow the thumbnail link so replacing the hover preview does not remove the button. The menu sends the selected video to MDM.
 - The standalone Chromium extension now has a consistent ID across install folders. The desktop connector registers that ID automatically.

@@ -65,14 +65,20 @@ if (process.argv.includes('--native-host')) {
       // connector. This lets an upgraded desktop repair an older connector
       // before that connector has been replaced on disk.
       await require('node:fs/promises').writeFile(path.join(integrationRoot, 'integration', 'desktop-launch.json'), JSON.stringify({executable:app.getPath('exe'),args:app.isPackaged ? ['--browser-download'] : [root,'--browser-download']}));
+      let scanning = false;
       const connectBrowsers = async () => {
+        if (scanning) return;
+        scanning = true;
         try { connectedBrowsers = await require('./browser-registration.cjs').connectInstalledBrowsers({ dataDirectory: app.getPath('userData'), integrationRoot }); connectionError = ''; }
         catch (error) { connectionError = error.message; }
+        finally { scanning = false; }
       };
-      await connectBrowsers();
+      // macOS can defer access to browser profile files pending a user decision.
+      // Existing native hosts must still be able to open the download panel.
+      void connectBrowsers();
       const browserScan = setInterval(connectBrowsers, 15000);
       browserScan.unref();
-      const integration = async () => { await connectBrowsers(); return integrationInfo(); };
+      const integration = async () => { void connectBrowsers(); return integrationInfo(); };
       const integrationInfo = () => ({ port: bridge?.port || null, connectedBrowsers, connectionError, extensionPath: path.join(integrationRoot, 'extension'), integrationPath: path.join(integrationRoot, 'integration'), packaged: app.isPackaged, executable: app.getPath('exe') });
       const snapshot = () => ({ ...engine.snapshot(), integration: integrationInfo() });
       const handlers = {

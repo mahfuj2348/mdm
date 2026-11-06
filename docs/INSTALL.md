@@ -4,9 +4,9 @@
 
 Open **[Latest release](https://github.com/mahfuj2348/mdm/releases/latest)**:
 
-- **Windows 10/11 x64:** download `MDM-0.1.4-Windows-x64-Setup.exe`, run it and follow the wizard. Open MDM from Start or the desktop shortcut.
-- **Apple Silicon Mac:** download `MDM-0.1.4-macOS-arm64.dmg`.
-- **Intel Mac:** download `MDM-0.1.4-macOS-x64.dmg`.
+- **Windows 10/11 x64:** download `MDM-0.1.5-Windows-x64-Setup.exe`, run it and follow the wizard. Open MDM from Start or the desktop shortcut.
+- **Apple Silicon Mac:** download `MDM-0.1.5-macOS-arm64.dmg`.
+- **Intel Mac:** download `MDM-0.1.5-macOS-x64.dmg`.
 
 No Git, Node.js, Python or terminal is needed. The Windows installer is unsigned,
 so an unknown-publisher prompt may appear. Video speed depends on the source server.
