@@ -16,7 +16,18 @@ ZIP="$OUT/MDM-Extension-$VERSION.zip"
 mkdir -p "$OUT"
 rm -f "$ZIP"
 
-cd "$EXT"
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
+cp -R "$EXT/." "$STAGE/"
+cd "$STAGE"
+python3 - "$ROOT/integration/extension-public-key.txt" <<'PYKEY'
+from pathlib import Path
+import json,sys
+manifest=Path("manifest.json")
+data=json.loads(manifest.read_text())
+data["key"]=Path(sys.argv[1]).read_text().strip()
+manifest.write_text(json.dumps(data,indent=2)+"\n")
+PYKEY
 find . -type f \
   ! -name '*.test.cjs' \
   ! -name 'manifest.firefox.json' \
@@ -26,5 +37,4 @@ find . -type f \
   | TZ=UTC zip -q -X "$ZIP" -@
 
 echo "Store package: $ZIP"
-echo "Entries:"
-unzip -l "$ZIP" | tail -n +4 | head -n -2 | awk '{print "  " $4}'
+unzip -tq "$ZIP"

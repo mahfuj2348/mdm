@@ -2,16 +2,17 @@
   const api = globalThis.browser || chrome;
   const seen = new WeakSet();
   const records = new Set();
-  let pending = false;
+  let pending = false, pointer, pointerFrame;
   let stopped = false, scanFrame, mutationObserver, scrollTimer;
   const listeners = new AbortController();
   const resizeObserver = new ResizeObserver(() => position());
-  const direct = value => { try { const u = new URL(value, location.href); return /^https?:$/.test(u.protocol) ? u.href : null; } catch { return null; } };
+  const direct = value => { if(!value)return null; try { const u = new URL(value, location.href); return /^https?:$/.test(u.protocol) ? u.href : null; } catch { return null; } };
   function shutdown() {
     if(stopped)return;
     stopped=true;
     listeners.abort();
     clearTimeout(scrollTimer);
+    if(pointerFrame!==undefined)cancelAnimationFrame(pointerFrame);
     mutationObserver?.disconnect();resizeObserver.disconnect();
     if(scanFrame!==undefined)cancelAnimationFrame(scanFrame);
     for(const record of records){clearTimeout(record.retireTimer);record.sourceObserver?.disconnect();record.host.remove();}
@@ -30,10 +31,23 @@
     try{return await api.runtime.sendMessage(message);}
     catch(error){if(/extension context invalidated/i.test(error?.message||''))shutdown();throw error;}
   }
+  const thumbnailSelector = 'a#thumbnail[href], a.yt-lockup-view-model__content-image[href], a.ytLockupViewModelContentImage[href], a[href*="/watch?"]:has(yt-thumbnail-view-model)';
+  function watchLink(anchor) {
+    try {
+      const url = new URL(anchor.href);
+      const id = url.searchParams.get('v');
+      if (url.origin === location.origin && url.pathname === '/watch' && /^[\w-]{11}$/.test(id))
+        return 'https://www.youtube.com/watch?v=' + id;
+    } catch {}
+    return null;
+  }
   function scan() {
     pending = false;
     if(!connected())return;
-    for (const video of document.querySelectorAll('video')) {
+    const feed = /(^|\.)youtube\.com$/.test(location.hostname) && !/^\/(watch|shorts|embed|live)(?:\/|$)/.test(location.pathname);
+    const anchors = feed ? [...document.querySelectorAll(thumbnailSelector)].filter(watchLink) : [];
+    for (const video of anchors.length ? anchors : document.querySelectorAll('video')) {
+      const thumbnail = anchors.length > 0;
       if (seen.has(video)) continue;
       seen.add(video);
       const host = document.createElement('div');
@@ -42,17 +56,19 @@
       shadow.innerHTML = '<style>:host{font:12px "Segoe UI",Tahoma,sans-serif;color:#17364b}.bar{display:flex;justify-content:flex-end;align-items:stretch}.download,.dismiss{font:12px "Segoe UI",Tahoma,sans-serif;background:linear-gradient(#f7fcff,#c6e2f5);color:#17364b;border:1px solid #719ab7;cursor:default;box-shadow:0 1px 3px #0003;height:27px}.download{border-radius:3px 0 0 3px;padding:3px 9px}.dismiss{width:24px;padding:0;border-left:0;border-radius:0 3px 3px 0;font-size:16px;line-height:20px}.download:hover,.dismiss:hover{background:linear-gradient(#fff,#acd4ef)}.dismiss:hover{color:#8d1c18}.download:disabled{opacity:.65}.chooser{position:fixed;background:#fafafa;color:#222;padding:5px;border:1px solid #8b8b8b;border-radius:2px;width:min(410px,calc(100vw - 10px));box-shadow:2px 3px 8px #0005;max-height:min(330px,55vh);overflow:auto}.chooser p{margin:4px 6px 7px;line-height:1.4}.row{display:block;width:100%;text-align:left;background:transparent;border:0;border-radius:0;box-shadow:none;padding:5px 7px;font:12px "Segoe UI",Tahoma,sans-serif;color:#001845;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.row:hover:not(:disabled),.row:focus-visible{background:#dceeff;outline:1px dotted #315b75;outline-offset:-2px}.row:disabled{color:#8a8a8a}</style><div class="bar"><button class="download" type="button">↓ Download this video ▾</button><button class="dismiss" type="button" title="Hide this download panel" aria-label="Hide this download panel">×</button></div>';
       const button = shadow.querySelector('.download');
       const dismiss = shadow.querySelector('.dismiss');
-      const record = {video, host, shadow, dismissed:false}; records.add(record);
+      const record = {video, host, shadow, thumbnail, dismissed:false}; records.add(record);
       const leave = () => {
         record.lastSeen=Date.now(); clearTimeout(record.retireTimer);
         record.retireTimer=setTimeout(position,850);
       };
+      if (thumbnail) video.addEventListener('pointerenter',position,{signal:listeners.signal});
       video.addEventListener('pointerleave',leave,{signal:listeners.signal});
       host.addEventListener('pointerleave',leave,{signal:listeners.signal});
       host.addEventListener('focusout',leave,{signal:listeners.signal});
       resizeObserver.observe(video);
       document.documentElement.appendChild(host);
       const report = () => {
+        if (thumbnail) return;
         if (globalThis.facebookMedia?.isFacebook(location.href)) {
           const fbItems = globalThis.facebookMedia.extractFacebookMedia(document.documentElement.innerHTML, location.href);
           if (fbItems.length) send({action:'remember', items: fbItems}).catch(() => {});
@@ -87,7 +103,7 @@
                 await send({action:'remember', items: fbItems}).catch(() => {});
               }
             }
-            const result=await send({action:'listForFrame'});
+            const result = thumbnail ? {ok:true,items:[{provider:'youtube',url:watchLink(video),quality:'Best available',format:'MP4',audioState:'Video + audio',title:video.getAttribute('aria-label') || 'YouTube video'}]} : await send({action:'listForFrame'});
             if(!result?.ok)throw new Error(result?.error||'Could not list video formats.');
             hint.textContent='Choose a format to download';
             const candidates=result?.items||[];
@@ -116,7 +132,7 @@
     }
     position();
   }
-  function friendlyError(message) { return /native messaging host not found/i.test(message || '') ? 'Chrome cannot find the desktop connector. Open MDM → Browser Integration → Refresh browsers, then reload this extension and page. Details: '+message : message; }
+  function friendlyError(message) { return /native messaging host not found|native messaging host is forbidden/i.test(message || '') ? 'Chrome cannot find the desktop connector. Open MDM → Browser Integration → Refresh browsers, then reload this extension and page. Details: '+message : message; }
   function closeChoosers(except) {
     for(const record of records){
       if(record===except)continue;
@@ -141,13 +157,15 @@
       if (!rect) continue;
       record.lastRect = rect;
       const onScreen = record.video.isConnected && rect.width > 100 && rect.height > 60 && rect.bottom > 0 && rect.top < innerHeight && rect.right > 0 && rect.left < innerWidth;
-      if (onScreen) record.lastSeen = Date.now();
-      const visible = !record.dismissed && (onScreen || interacting || grace);
+      const overCard = pointer && pointer.x >= rect.left && pointer.x <= rect.right && pointer.y >= rect.top && pointer.y <= rect.bottom;
+      const active = onScreen && (!record.thumbnail || overCard || record.video.matches(':hover, :focus-within'));
+      if (active) record.lastSeen = Date.now();
+      const visible = !record.dismissed && (active || interacting || grace);
       record.host.style.display = visible ? 'block' : 'none';
       if(!visible)continue;
       const width = record.host.offsetWidth || 180, height = record.host.offsetHeight || 27;
       const above = rect.top >= height + 6;
-      record.host.style.top = `${Math.max(5, Math.min(innerHeight - height - 5,above ? rect.top-height-4 : rect.top+4))}px`;
+      record.host.style.top = `${Math.max(5, Math.min(innerHeight - height - 5,record.thumbnail ? rect.top+5 : above ? rect.top-height-4 : rect.top+4))}px`;
       record.host.style.left = `${Math.max(5, Math.min(innerWidth - width - 5, rect.right - width - 8))}px`;
       const chooser=record.shadow.querySelector('.chooser');
       if(chooser){
@@ -161,6 +179,14 @@
   }
   mutationObserver=new MutationObserver(() => { if (!stopped && !pending) { pending = true; scanFrame=requestAnimationFrame(scan); } });
   mutationObserver.observe(document.documentElement, {subtree:true, childList:true});
+  document.addEventListener('pointermove', event => {
+    if (!/(^|\.)youtube\.com$/.test(location.hostname)) return;
+    pointer = {x:event.clientX, y:event.clientY};
+    if (pointerFrame === undefined) pointerFrame = requestAnimationFrame(() => {
+      pointerFrame = undefined;
+      position();
+    });
+  }, {capture:true, passive:true, signal:listeners.signal});
   document.addEventListener('pointerdown',event=>{
     const path=event.composedPath();
     const inside=[...records].find(record=>path.includes(record.host));

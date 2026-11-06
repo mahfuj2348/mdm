@@ -25,5 +25,24 @@ const assert=require('node:assert/strict');
  await page.keyboard.press('Escape');
  assert.equal(await page.evaluate(()=>!!window.testShadow.querySelector('.chooser')),false);
  console.log('PASS: real Chromium pointer travel, preview removal, scroll and Escape');
+ const feed=await browser.newPage();
+ await feed.route('https://www.youtube.com/**',route=>route.fulfill({contentType:'text/html',body:'<a id="thumbnail" href="/watch?v=abcdefghijk" style="display:block;width:400px;height:220px;background:#ddd"><video></video></a>'}));
+ await feed.goto('https://www.youtube.com/');
+ await feed.evaluate(()=>{
+   const original=Element.prototype.attachShadow;
+   Element.prototype.attachShadow=function(options){const root=original.call(this,options);window.panel=root;return root;};
+   window.chrome={runtime:{id:'test',onMessage:{addListener(){}},sendMessage:async message=>{window.handoff=message;return {ok:true};}}};
+ });
+ for(const name of ['media-choices.js','content.js'])await feed.addScriptTag({content:fs.readFileSync('extension/'+name,'utf8')});
+ await feed.mouse.move(100,120);
+ await feed.waitForFunction(()=>window.panel.host.offsetWidth>0);
+ await feed.evaluate(()=>document.querySelector('video').remove());
+ await feed.waitForTimeout(1000);
+ const target=await feed.evaluate(()=>{const r=window.panel.querySelector('.download').getBoundingClientRect();return {x:r.left+10,y:r.top+10};});
+ await feed.mouse.click(target.x,target.y);
+ const row=await feed.evaluate(()=>{const r=window.panel.querySelector('.row').getBoundingClientRect();return {x:r.left+10,y:r.top+10};});
+ await feed.mouse.click(row.x,row.y);
+ assert.equal(await feed.evaluate(()=>window.handoff.item.url),'https://www.youtube.com/watch?v=abcdefghijk');
+ console.log('PASS: YouTube thumbnail handoff after preview is removed');
  } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

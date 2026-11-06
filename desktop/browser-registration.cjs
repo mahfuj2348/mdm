@@ -115,6 +115,8 @@ async function connectInstalledBrowsers({ dataDirectory, integrationRoot, localA
   const expected = await fs.realpath(path.join(integrationRoot, 'extension')).catch(() => path.join(integrationRoot, 'extension'));
   const isWindows = process.platform === 'win32';
 
+  const releaseKey = await fs.readFile(path.join(__dirname, '../integration/extension-public-key.txt'), 'utf8');
+  const releaseId = computeExtensionId(Buffer.from(releaseKey.trim(), 'base64'));
   for (const [browser, spec] of Object.entries(BROWSERS).filter(([, value]) => !value.firefox)) {
     let root;
     if (localAppData || roamingAppData) {
@@ -125,7 +127,7 @@ async function connectInstalledBrowsers({ dataDirectory, integrationRoot, localA
     }
     if (!root) continue;
 
-    const ids = new Set();
+    const ids = new Set([releaseId]);
     if (!isWindows) {
       // On macOS, register computed unpacked extension ID directly as well
       ids.add(computeExtensionId(expected));

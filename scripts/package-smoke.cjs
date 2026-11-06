@@ -19,7 +19,7 @@ const exe=path.join(appRoot,win?'MDM.exe':'MacOS/MDM');
 const probe=`const fs=require('node:fs'); const path=require('node:path');
 const r=${JSON.stringify(resources)};
 const pkg=require(path.join(r,'app.asar','package.json'));
-if(pkg.version!=='0.1.2')throw new Error('Wrong package version');
+if(pkg.version!==${JSON.stringify(require('../package.json').version)})throw new Error('Wrong package version');
 for(const file of ['browser/extension/manifest.json','browser/integration/native-host.cjs',${JSON.stringify(win?'browser/integration/native-host.exe':'browser/integration/native-host.sh')}])fs.accessSync(path.join(r,file));
 import(require('node:url').pathToFileURL(path.join(r,'app.asar','core','engine.mjs')).href).then(m=>{if(!m.DownloadEngine)throw new Error('Missing engine');console.log('Runtime and download engine OK');}).catch(e=>{console.error(e);process.exit(1)});`;
 console.log(execFileSync(exe,['-e',probe],{env:{...process.env,ELECTRON_RUN_AS_NODE:'1'},encoding:'utf8',timeout:30000}));
